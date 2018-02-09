@@ -1,0 +1,138 @@
+p39)
+
+연습문제 1:
+SCOTT>select name|| '''s ID: ' || id || ', ' || 'WEIGHT is ' || weight || ' Kg'
+ as "ID AND WEIGHT" from student;
+
+연습문제 2:
+SCOTT>select name || '(' || emp_type || ') ,' || name || '''' || emp_type || '''
+' as "NAME AND EMPLOYMENT TYPE" from emp2;
+
+연습문제 3:
+SCOTT>select name || '''s pay is \' || pay as "NAME AND PAY" from emp2;
+
+SQL> select studno, name, profno from student
+  2  union
+  3  select profno, name, deptno from professor;
+
+
+( p 79 문제 )
+SCOTT>select name, tel, substr(tel, 1, instr(tel, ')') -1) as AREA_NUMBER from s
+tudent where deptno1=201;
+
+NAME                           TEL                  AREA_NUMBE
+------------------------------ -------------------- ----------
+Demi Moore                     02)6255-9875         02
+Macaulay Culkin                02)312-9838          02
+Wesley Snipes                  053)736-4981         053
+Steve Martin                   02)6175-3945         02
+Sean Connery                   02)381-5440          02
+Christian Slater               031)345-5677         031
+
+6 rows selected.
+
+( p82 문제 )
+SCOTT>select rpad(ename, 10, substr('123456789', length(ename))) as RPAD from em
+p where deptno=20;
+
+RPAD
+---------------
+SMITH56789
+JONES56789
+SCOTT56789
+ADAMS56789
+FORD456789
+
+( p 85 )
+SCOTT>select name, tel, replace(tel, substr(tel, 5, 3), '***') as REPLACE from s
+tudent where deptno1 = 102;
+
+NAME            TEL                  REPLACE
+--------------- -------------------- ---------------
+Rene Russo      051)426-1700         051)***-1700
+Nicholas Cage   051)418-9627         051)***-9627
+Tim Robbins     055)488-2998         055)***-2998
+Charlie Sheen   055)423-9870         055)***-9870
+
+( p 106 )
+SCOTT>select studno, name, birthday from student where substr(birthday, 4,2) = 01;
+
+    STUDNO NAME            BIRTHDAY
+---------- --------------- --------
+      9511 Billy Crystal   76/01/23
+      9514 Bill Murray     76/01/20
+      9712 Sean Connery    78/01/05
+
+SCOTT>select empno, ename, hiredate from emp where substr(hiredate, 4, 2) between 1 and 3;
+
+     EMPNO ENAME                HIREDATE
+---------- -------------------- --------
+      7499 ALLEN                81/02/20
+      7521 WARD                 81/02/22
+      7934 MILLER               82/01/23
+
+( p 112 )
+SCOTT>select profno, name, pay, bonus, to_char(nvl(pay,0)*12+bonus, '999,999') as TOTAL 
+from professor where deptno = 201;
+
+    PROFNO NAME                    PAY      BONUS TOTAL
+---------- ---------------- ---------- ---------- ----------------
+      4001 Meryl Streep            570        130    6,970
+      4002 Susan Sarandon          330
+
+( p 120 )
+SCOTT>select name, jumin, decode(substr(jumin, 7, 1) , '1', 'MAN', '2', 'WOMAN')
+ as GENDER from student where deptno1 = 101;
+
+NAME             JUMIN                      GENDER
+---------------- -------------------------- ----------
+James Seo        7510231901813              MAN
+Billy Crystal    7601232186327              WOMAN
+Richard Dreyfus  7711291186223              MAN
+Danny Devito     7808192157498              WOMAN
+
+SCOTT>select name, tel, decode(substr(tel, 1, instr(tel, ')') -1), 
+'02', 'SEOUL', 
+'031', 'GYEONGNAM', 
+'052', 'ULSAN', '055', 'GYENGNAM') as LOC 
+from student where deptno1 = 101;
+
+NAME                 TEL                            LOC
+-------------------- ------------------------------ ------------------
+James Seo            055)381-2158                   GYENGNAM
+Billy Crystal        055)333-6328                   GYENGNAM
+Richard Dreyfus      02)6788-4861                   SEOUL
+Danny Devito         055)278-3649                   GYENGNAM
+
+( p 123 )
+SCOTT>select empno, ename, sal,
+  2  case when sal between 1 and 1000 then 1
+  3     when sal between 1001 and 2000 then 2
+  4     when sal between 2001 and 3000 then 3
+  5     when sal between 3001 and 4000 then 4
+  6  else 5
+  7  end "LEVEL"
+  8  from emp;
+
+     EMPNO ENAME                       SAL      LEVEL
+---------- -------------------- ---------- ----------
+      7369 SMITH                       800          1
+      7499 ALLEN                      1600          2
+      7521 WARD                       1250          2
+      7566 JONES                      2975          3
+      7654 MARTIN                     1250          2
+      7698 BLAKE                      2850          3
+      7782 CLARK                      2450          3
+      7788 SCOTT                      3000          3
+      7839 KING                       5000          5
+      7844 TURNER                     1500          2
+      7876 ADAMS                      1100          2
+
+     EMPNO ENAME                       SAL      LEVEL
+---------- -------------------- ---------- ----------
+      7900 JAMES                       950          1
+      7902 FORD                       3000          3
+      7934 MILLER                     1300          2
+
+14 rows selected.
+
