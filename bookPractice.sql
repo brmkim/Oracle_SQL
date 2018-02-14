@@ -385,3 +385,288 @@ SELECT p1.profno, p1.name, p1.hiredate, p2.name,
        TO_NUMBER(TO_CHAR(p2.hiredate, 'yyyymmdd')) - TO_NUMBER(TO_CHAR(p1.hiredate, 'yyyymmdd')) "DIFF"
     FROM professor p1, professor p2;
     --WHERE TO_NUMBER(TO_CHAR(p2.hiredate, 'yyyymmdd')) - TO_NUMBER(TO_CHAR(p1.hiredate, 'yyyymmdd')) < 0 ;
+-- 6.
+
+---
+--- Chapter 5(DML), 6(DDL, Dictionary) -- Pass for now
+---
+
+---
+--- Chapter 7. Constraints
+---
+CREATE TABLE new_emp1(
+    no NUMBER(4) CONSTRAINT emp1_no_pk PRIMARY KEY,    -- "emp1_no_pk" Name of constraint. It gets saved in the dictionary
+    name VARCHAR2(20) CONSTRAINT emp1_name_nn NOT NULL,
+    jumin VARCHAR2(13) CONSTRAINT emp1_jumin_nn NOT NULL CONSTRAINT emp_jumin_uk UNIQUE, -- no "," between multiple constraints
+    loc_code NUMBER(1) CONSTRAINT emp1_area_ck CHECK(loc_code < 5),
+    deptno VARCHAR2(6) CONSTRAINT emp1_deptno_fk REFERENCES dept2(dcode)
+    );
+
+CREATE TABLE new_emp2(    -- table wihtout names of constraints. Can add contraints later
+    no NUMBER(4) PRIMARY KEY,
+    name VARCHAR2(20) NOT NULL,
+    jumin VARCHAR2(13) NOT NULL UNIQUE,
+    loc_code NUMBER(1) CHECK(loc_code < 5),
+    deptno VARCHAR2(6) REFERENCES dept2(dcode)
+    );
+
+ALTER TABLE new_emp2 ADD CONSTRAINT emp2_name_uk UNIQUE(name);
+
+-- When adding NOT NULL: "MODIFY()"
+ALTER TABLE new_emp2 MODIFY (loc_code constraint emp2_loccode_nn NOT NULL);
+-- Adding Foreign Key Constraint:  ...the referenced key has to be PRIMARY KEY or UNIQUE!
+ALTER TABLE new_emp2 ADD CONSTRAINT emp2_no_fk FOREIGN KEY(no) REFERENCES emp2(empno);
+
+-- Normally the parent table cannot delete the data/column that is rerefenced by a foreign key. To be able to delete it, use
+-- ON DELETE CASCADE option on the parents column. It deletes the referenced child data on deletion. 
+-- ON DELETE NULL option sets the referenced child data to NULL when the parent data are deleted.
+CREATE TABLE c_test1( no NUMBER, name VARCHAR2(6), deptno NUMBER);
+CREATE TABLE c_test2( no NUMBER, name VARCHAR2(10));
+
+ALTER TABLE c_test2 ADD CONSTRAINT ctest2_no_uk UNIQUE(no);
+ALTER TABLE c_test1 ADD CONSTRAINT ctest1_deptno_fk FOREIGN KEY(deptno) REFERENCES c_test2(no);
+-- Deleting the constraint: ALTER TABLE, DROP
+ALTER TABLE c_test1 DROP CONSTRAINT ctest1_deptno_fk;
+ALTER TABLE c_test1 ADD CONSTRAINT ctest1_deptno_fk FOREIGN KEY(deptno) REFERENCES c_test2(no) ON DELETE CASCADE;
+
+INSERT INTO c_test2 VALUES(10, 'AAAA');
+INSERT INTO c_test2 VALUES(20, 'BBBB');
+INSERT INTO c_test2 VALUES(30, 'CCCC');
+COMMIT;
+SELECT * FROM c_test2;
+INSERT INTO c_test1 VALUES(1, 'APPLE', 10);
+INSERT INTO c_test1 VALUES(2, 'BANANA', 20);
+INSERT INTO c_test1 VALUES(3, 'CHERRY', 30);
+INSERT INTO c_test1 VALUES(4, 'PEACH', 40);   -- Error. "Parent key not found"
+SELECT * FROM c_test1;
+DELETE FROM c_test2 WHERE no = 10;  -- Deleting parent data on c_test2 table. Child data on c_test1 is also deleted.
+
+ALTER TABLE c_test1 DROP CONSTRAINT ctest1_deptno_fk;
+ALTER TABLE c_test1 ADD CONSTRAINT ctest1_deptno_fk FOREIGN KEY(deptno) REFERENCES c_test2(no) ON DELETE SET NULL;
+DELETE FROM c_test2 WHERE no = 20;  -- Delte parent data, child daga sets to NULL
+                                    -- If the colum in child table is set to NOT NULL, this deletion cannot be done. 
+ALTER TABLE c_test1 MODIFY(deptno CONSTRAINT ctest1_deptno_nn NOT NULL);  -- gets Error because there is NULL value in the col.
+
+-- ENABLE/DISABLE the constraints
+--
+--- 1) DISABLE option: NOVALIDATE (DISABLE default) and VALIDATE
+---- 1-1. DISABLE NOVALIDATE : disable constraint completely. Can insert/update/delete data.
+INSERT INTO t_novalidate VALUES(1, 'DDD');  -- Error: "unique constraint (JAVA00.SYS_C007130) violated"
+ALTER TABLE t_novalidate DISABLE NOVALIDATE CONSTRAINT SYS_C007130;   -- Notice using CONSTRAINT_NAME (SYS_C007130) above.
+INSERT INTO t_novalidate VALUES(1, 'DDD'); -- not it works
+
+---- 1-2. DISABLE VALIDATE : Cannot change data on the subject column! (wonder what the purpose of this option is)
+INSERT INTO t_novalidate VALUES(4, NULL);  -- Error: "canot insert NULL" -- Name column has NOT NULL constraint
+ALTER TABLE t_novalidate DISABLE VALIDATE CONSTRAINT SYS_C007129;  -- SYS_C007129 is the constraint name for NAME column NOT NL
+INSERT INTO t_novalidate VALUES(4, NULL);  -- Still error: "No insert/update/delete on table with constraint 
+                                            -- (JAVA00.SYS_C007129) disabled and validated"
+--                                            
+---- DISABLE option deletes UNIQUE INDEX on PRIMARY KEY and UNIQUE constraints!
+--
+--- 2) ENABLE -- NOVALIDATE and VALIDATE (ENABLE default)
+---- 2-1. ENABLE NOVALIDATE: only enables constraints of the NEWLY incoming data. Don't check constraints before ENABLE is used
+---- 2-2. ENABLE VALIDATE: enables constraints on ALL data (previous and new). Cancels ENABLE if violation is found...so one
+----                        will have to individually find the data, change, and enable again...
+INSERT INTO t_enable VALUES(1, 'AAA');
+INSERT INTO t_enable VALUES(2, 'BBB');
+INSERT INTO t_enable VALUES(3, NULL);   -- error. NOT NULL constraint is set on the column
+ALTER TABLE t_enable DISABLE CONSTRAINT te_name_nn;  -- DISABLE the constraint (DISABLE NOVALIDATE is default)
+INSERT INTO t_enable VALUES(3, NULL);   -- now can insert NULL
+
+ALTER TABLE t_enable ENABLE NOVALIDATE CONSTRAINT te_name_nn;  -- now ENABLE the constraint, but the table HAS null data.
+SELECT * FROM t_enable;   -- the table HAS null data despite the NOT NULL constraint because NOVALIDATE doesn't check the old d
+INSERT INTO t_enable VALUES(3, NULL);  -- Can't.
+
+ALTER TABLE t_enable DISABLE CONSTRAINT te_name_nn; 
+ALTER TABLE t_enable ENABLE VALIDATE CONSTRAINT te_name_nn; -- Error due to the previous NULL data. "check constraint violated" 
+--- Use EXCEPTION table to fix the troubled data on the way to execute ENABLE option.
+--- Use SYS account and create EXCEPTION TABLE (@?/rdbms/admin/utlexcpt.sql)
+CREATE TABLE java00.tt500( no NUMBER CONSTRAINT tt500_ck CHECK( no > 5) );
+ALTER TABLE java00.tt500 DISABLE CONSTRAINT tt500_ck;
+INSERT INTO java00.tt500 VALUES(1);
+INSERT INTO java00.tt500 VALUES(6);
+INSERT INTO java00.tt500 VALUES(7);
+COMMIT;
+SELECT * FROM java00.tt500;
+
+-- Now ENABLE VALIDATE the constraint and put the violating data into exception table
+--ALTER TABLE java00.tt500 ENABLE VALIDATE CONSTRAINT tt500_ck EXCEPTIONS INTO sys.exceptions; 
+CREATE TABLE exceptions( row_id ROWID, owner VARCHAR2(30), table_name VARCHAR2(30), constraint VARCHAR2(30));
+ALTER TABLE java00.tt500 ENABLE VALIDATE CONSTRAINT tt500_ck EXCEPTIONS INTO exceptions;  
+    -- Above: "cannot validate...CHECK constraint violated"
+SELECT rowid, no FROM java00.tt500 WHERE rowid in (SELECT row_id FROM exceptions); -- ROW_ID: AAAE/FAABAAALWpAAA, NO = 1
+UPDATE java00.tt500 SET no = 8 WHERE rowid = AAAE/FAABAAALWpAAA; -- ORA-00904: "FAABAAALWPAAA": invalid identifier
+UPDATE java00.tt500 SET no = 8 WHERE no = 1;
+COMMIT;
+TRUNCATE TABLE exceptions;  -- Now that the errored row is updated, truncate the error log
+select * from exceptions;
+select rowid, no from java00.tt500;
+ALTER TABLE java00.tt500 ENABLE VALIDATE CONSTRAINT tt500_ck EXCEPTIONS INTO exceptions;  -- Now ENABLE VALIDATE option works.
+
+
+-- View the constraints on USER_CONSTRAINTS dictionary and USER_CONS_COLUMNS dictionary
+-- (Note: table name has to be CAPITAL)
+SELECT * FROM user_constraints WHERE table_name = 'T_NOVALIDATE'; -- CONSTRAINT_TYPE: C - Check, P - Primary Key, U - Unique
+SELECT * FROM user_cons_columns WHERE table_name = 'T_NOVALIDATE';
+
+----
+---- CHAPTER 8. INDEX
+----
+-- 1) UNIQUE INDEX
+CREATE UNIQUE INDEX IDX_DEPT2_DNAME ON dept2(dname);
+-- 2) NON-UNIQUE INDEX
+CREATE INDEX IDX_DEPT2_AREA ON dept2(area);
+
+-- Functon Based Index(FBI)
+CREATE INDEX idx_prof_fbi ON professor(pay + 100);   -- makes a new column(pay + 100) on Professor table
+-- Descending Index
+CREATE INDEX idx_prof_pay ON professor(pay DESC);
+-- Composite Index  -- where creating index combining two or more columns
+CREATE INDEX idx_emp_comp ON emp( ename, job);
+
+-- View created indexes
+SELECT table_name, column_name, index_name FROM USER_IND_COLUMNS;  -- or DBA_IND_COLUMNS
+SELECT * FROM USER_INDEXES; -- OR DBA_INDEXES
+
+-- Monitoring indexes
+ALTER INDEX IDX_DEPT2_DNAME MONITORING USAGE;
+ALTER INDEX IDX_DEPT2_DNAME NOMONITORING USAGE; -- monitoring off
+-- check
+SELECT index_name, used FROM v$object_usage WHERE index_name = 'IDX_DEPT2_DNAME';
+select * from v$object_usage;
+
+-- Index Rebuild
+DROP TABLE inx_test;
+CREATE TABLE inx_test (no NUMBER); -- creating table
+BEGIN FOR i IN 1..10000 LOOP        -- inserting data
+        INSERT INTO inx_test VALUES(i);
+      END LOOP;
+     COMMIT;
+     END;
+/
+CREATE INDEX idx_inxtest_no ON inx_test(no);   -- creating index
+
+ANALYZE INDEX idx_inxtest_no VALIDATE STRUCTURE; -- analyze the index
+SELECT (del_lf_rows_len / lf_rows_len) * 100 BALANCE 
+    FROM index_stats 
+    WHERE name = 'IDX_INXTEST_NO';    -- BALANCE shows 0. 0 is good.
+    
+---- Now delete 4000 data out of 10000
+DELETE FROM inx_test WHERE no BETWEEN 1 AND 4000;
+SELECT COUNT(*) FROM inx_test;
+SELECT (del_lf_rows_len / lf_rows_len) * 100 BALANCE 
+    FROM index_stats 
+    WHERE name = 'IDX_INXTEST_NO';   -- Balance is still 0
+ANALYZE INDEX idx_inxtest_no VALIDATE STRUCTURE;  -- analyze the index again
+SELECT (del_lf_rows_len / lf_rows_len) * 100 BALANCE 
+    FROM index_stats 
+    WHERE name = 'IDX_INXTEST_NO';  -- now balance is 39.960347.., meaning about 40% is out of balance
+
+---- Now rebuild the index
+ALTER INDEX idx_inxtest_no REBUILD; 
+
+ANALYZE INDEX idx_inxtest_no VALIDATE STRUCTURE;  -- analyze the index again
+SELECT (del_lf_rows_len / lf_rows_len) * 100 BALANCE 
+    FROM index_stats 
+    WHERE name = 'IDX_INXTEST_NO';    -- Balance is now 0.
+    
+----
+---- CHAPTER 9. VIEW
+----
+----- VIEW does not contain data. It only executes sub queries upon SELECT operation. 
+----- The sub queries fetch data from tables, returns to the user, then delete the fetched.
+CREATE OR REPLACE VIEW v_emp1 
+    AS SELECT empno, ename, hiredate
+       FROM emp;
+SELECT * FROM v_emp1;
+
+-- other VIEW examples
+CREATE VIEW prof_view AS SELECT name, deptno, pay FROM professor;
+CREATE TABLE o_table (a NUMBER, b NUMBER);
+CREATE VIEW view1 
+    AS SELECT a, b FROM o_table;    
+CREATE VIEW view2 
+    AS SELECT a, b FROM o_table 
+    WITH READ ONLY;
+INSERT INTO view1 VALUES(3,9);   -- inserting data using VIEW is possible
+INSERT INTO view1 VALUES(5,6);
+
+select * from view1;
+SELECT * FROM o_table;  -- Notice inserted value using VIEW also inserted into o_table 
+
+CREATE VIEW view3 
+    AS SELECT a, b FROM o_table
+    WHERE a = 3
+    WITH CHECK OPTION;   -- cannot do "UPDATE view3 SET a = 5" due to the CHECK OPTION on a
+DELETE FROM view3 WHERE a = 3;   -- BUT you can DELETE it!!   
+ 
+-- COMPLEX VIEW
+--- View which contains joining of tables
+CREATE OR REPLACE VIEW v_emp AS
+    SELECT e.ename, d.dname FROM emp e, dept d WHERE e.deptno = d.deptno;  --- Doesn't execute the sub queries
+SELECT * from v_emp;   --- the sub-queries are executed now
+
+-- INLINE VIEW
+--- Write sub queries in the FROM clause so that one doesn't have to create view
+SELECT e.deptno, d.dname, e.sal 
+    FROM (SELECT deptno, MAX(sal) sal FROM emp GROUP BY deptno) e, dept d   -- this SELECT clause is the INLINE VIEW query
+    WHERE e.deptno = d.deptno;
+
+-- CHECK the created VIEW
+SELECT view_name, text, read_only FROM USER_VIEWS;  -- or DBA_VIEWS if you're SYSDBA
+
+-- MATERIALIZED VIEW (MVIEW)
+--- Normally VIEW does not contain data but MVIEW does. It increases efficiency when a certain (large) dataset is viewed 
+--- often by (large number of) users.
+--- Requires QUERY REWRITE and CREATE MATERIALIZED VIEW grant.
+
+CREATE MATERIALIZED VIEW m_prof  -- Oracle Database Express Edition does not contain MATERIALIZED VIEW QUERY REWRITE feature
+    BUILD IMMEDIATE  
+    REFRESH    -- When the data on original table has changed 
+    ON DEMAND  -- ON DEMAND -- the user does refresh by hand, ON COMMIT -- done at the time of COMMIT
+    COMPLETE   -- COMPLETE/FAST/FORCE/NEVER
+    ENABLE QUERY REWRITE
+    AS
+        SELECT profno, name, pay 
+        FROM professor;
+
+BEGIN
+    DBMS_MVIEW.REFRESH('M_PROF');     -- Refresh by hand
+    END;
+/
+
+EXEC DBMS_MVIEW.REFRESH_ALL_MVIEWS;  -- Can also do this.
+
+-- View or Drop the MVIEW
+SELECT * FROM USER_MVIEWS;  -- or DBA_MVIEWS
+DROP MATERIALIZED VIEW m_prof;
+
+---------- CH 9 EXERCISE (p.432~434) ----------
+-- 1. 
+CREATE VIEW v_prof_dept2 
+    AS SELECT p.profno, p.name, d.dname
+    FROM professor p, department d
+    WHERE p.deptno = d.deptno;
+SELECT * FROM v_prof_dept2;    
+
+-- 2.
+SELECT d.dname, a.MAX_HEIGHT, a.MAX_WEIGHT 
+    FROM department d, 
+         (SELECT deptno1, MAX(height) "MAX_HEIGHT", MAX(weight) "MAX_WEIGHT" FROM student GROUP BY deptno1) a
+    WHERE a.deptno1 = d.deptno;
+
+-- 3.
+SELECT d.dname, a.MAX_HEIGHT, a.name, a.height 
+    FROM department d,
+         (SELECT deptno1, name, height, MAX(height) OVER(PARTITION BY deptno1) "MAX_HEIGHT"  FROM student) a
+    WHERE a.deptno1 = d.deptno
+    AND a.MAX_HEIGHT = a.height;
+    
+-- 4.
+SELECT a.grade, a.name, a.height, a.AVG_HEIGHT
+    FROM (SELECT name, grade, height, AVG(height) OVER (PARTITION BY grade) "AVG_HEIGHT" FROM student) a
+    WHERE a.height > a.avg_height
+    ORDER BY grade ASC;
+
+-- 5.
+-- 6.
