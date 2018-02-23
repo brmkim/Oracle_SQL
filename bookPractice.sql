@@ -669,4 +669,455 @@ SELECT a.grade, a.name, a.height, a.AVG_HEIGHT
     ORDER BY grade ASC;
 
 -- 5.
--- 6.
+SELECT a.ranking, a.name, a.pay
+    FROM (SELECT ROW_NUMBER() over (ORDER BY pay DESC) RANKING, name, pay from professor) a
+    WHERE a.ranking >= 1 AND a.ranking <= 5;
+    
+-- 6. [not done yet]
+SELECT a.num, a.profno, a.name, a.pay, SUM(a.pay) OVER(ORDER BY a.num)
+    FROM (SELECT ROW_NUMBER() over (ORDER BY profno) NUM, profno, name, pay from professor) a;
+
+-----
+----- CAHPTER 10: SUB QUERY
+-----
+-- Sub queries comes after WHERE clauses and has to be inside the paranthesis ()
+SELECT ename, comm 
+    FROM emp 
+    WHERE comm < (SELECT comm 
+                  FROM emp 
+                  WHERE ename = 'WARD');
+--- 1) Single Row Sub Queries
+----- sub queries that print out a single row result. Use operators such as =, <>, <=, >=, <, > 
+-- p.441 (1)
+SELECT s.name STUD_NAME, d.dname DEPT_NAME
+    FROM student s, department d
+    WHERE s.deptno1 = (SELECT deptno1 from student WHERE name = 'Anthony Hopkins')
+    AND s.deptno1 = d.deptno;
+-- p.441 (2)
+SELECT p.name, TO_CHAR(p.hiredate, 'yyyy-mm-dd'), d.dname 
+    FROM professor p, department d
+    WHERE hiredate > (SELECT hiredate 
+                      FROM professor 
+                      WHERE name = 'Meg Ryan')
+    AND p.deptno = d.deptno;
+-- p.442 (3)
+SELECT s.name, s.weight 
+    FROM student s
+    WHERE s.weight > (SELECT AVG(weight) FROM student WHERE deptno1 = 201);
+
+
+--- 2) Multi-Row Sub Queries
+---- Self explanatory. 
+---- Multi-row sub query operators: IN (equal to results of the sub query), 
+----                                EXISTS (execute the main query IF results of the sub query exist), 
+----                                > ANY, < ALL (return the smallest result among the results of the sub query),
+----                                < ANY, > ALL (return the largest result).
+---- ex) SAL > ANY(100, 200, 300) is... SAL > 100
+----     SAL > ALL(100, 200, 300) is... SAL > 300
+SELECT empno, name, deptno
+    FROM emp2
+    WHERE deptno IN (SELECT dcode FROM dept2 WHERE area = 'Pohang Main Office');
+
+---- p.446 (1)
+SELECT name, position, TO_CHAR(pay, '$999,999,999') SALARY 
+    FROM emp2 
+    WHERE pay >ALL (SELECT MIN(pay) 
+                    FROM emp2 
+                    WHERE position = 'Section head')
+    ORDER BY salary DESC;    
+---- (2)
+SELECT name, grade, weight 
+    FROM student 
+    WHERE weight <ANY (SELECT MIN(weight) FROM student WHERE grade = 2);
+---- (3)
+SELECT d.dname, e.name, TO_CHAR(e.pay, '$999,999,999') SALARY 
+    FROM emp2 e, dept2 d
+    WHERE pay <ALL (SELECT AVG(pay) OVER (PARTITION BY deptno)
+                    FROM emp2)
+    AND e.deptno = d.dcode;
+    
+--- 3) Multi Column Sub Queries
+SELECT grade, name, weight 
+    FROM student
+    WHERE weight IN (SELECT MAX(weight) OVER (PARTITION BY grade) FROM student); -- 0.019 seconds
+    
+SELECT grade, name, weight 
+    FROM student
+    WHERE (grade, weight) IN (SELECT grade, MAX(weight) FROM student GROUP BY grade);  -- 0.044 seconds
+    
+SELECT p.profno, p.name, p.hiredate, d.dname 
+    FROM professor p, department d
+    WHERE p.hiredate IN (SELECT MIN(hiredate) OVER (PARTITION BY deptno) FROM professor)  -- 0.032 sec
+    AND p.deptno = d.deptno
+    ORDER BY p.hiredate;
+    
+SELECT p.profno, p.name, p.hiredate, d.dname 
+    FROM professor p, department d
+    WHERE (p.deptno, p.hiredate) IN (SELECT deptno, MIN(hiredate) FROM professor GROUP BY deptno)   -- 0.044 sec
+    AND p.deptno = d.deptno
+    ORDER BY p.hiredate;
+    
+SELECT name, position, TO_CHAR(pay, '$999,999,999') SALARY 
+    FROM emp2 
+    WHERE pay IN (SELECT MAX(pay) OVER (PARTITION BY position) FROM emp2)
+    AND position IS NOT NULL
+    ORDER BY salary ASC;
+
+SELECT name, position, TO_CHAR(pay, '$999,999,999') SALARY 
+    FROM emp2 
+    WHERE (position, pay) IN (SELECT position, MAX(pay) FROM emp2 GROUP BY position)
+    AND position IS NOT NULL
+    ORDER BY salary ASC;    
+
+--- 4) SCALAR SUB QUERIES
+---- Sub queries that comes inside the SELECT clause. 
+---- Faster than join when data are smaller (it uses cache): it saves a result of a repeated query in a memory or "global temporary 
+----   table" 
+
+---- (1) Using WITH clause (Sub Query Factoring)
+------- first, make a table of a big size
+CREATE TABLE with_test1(
+    no NUMBER, name VARCHAR2(10), pay NUMBER(6)) TABLESPACE USERS;
+
+SET TIMING ON;
+-- Fill the table with random data    
+BEGIN
+FOR i in 1..5000000 LOOP
+    INSERT INTO with_test1
+    VALUES(i, DBMS_RANDOM.STRING('A', 5), DBMS_RANDOM.VALUE(6, 999999));
+    END LOOP;
+    COMMIT;
+END;
+/
+-- Check the talbe    
+SELECT COUNT(*) FROM with_test1;    -- 5,000,000
+SELECT * FROM with_test1 WHERE no < 50;
+
+-- Now test the time spent on getting MIN() and MAX()
+SELECT MAX(pay) - MIN(pay) FROM with_test1;   -- 0.656 seconds. Time spent without using index
+
+-- Create an index to test the time
+CREATE INDEX idx_with_pay ON with_test1(pay);
+SELECT MAX(pay) - MIN(pay) FROM with_test1;   -- 0.766 seconds.
+
+-- Test with WITH clause
+WITH a AS (   -- getting max val 
+    SELECT /*+ index_desc(w idx_with_pay) */ pay    -- SQL hint. 
+    FROM with_test1 w
+    WHERE pay >0
+    AND rownum = 1),    -- first row value of the descending val, therefore the largest
+    b AS (    -- getting min val.  a and b are virtual tables.
+    SELECT /*+ index(w idx_with_pay) */ pay
+    FROM with_test1 w
+    WHERE pay >0
+    AND rownum = 1)
+SELECT a.pay - b.pay     -- This is executed after max val of a and min val of b are found.
+FROM a,b;                                      -- 0.109 seconds. IMPROVED BY LOTS.
+
+-- Test 2
+CREATE INDEX idx_with_no ON with_test1(no);
+---- Using a normal subquery
+  SELECT COUNT(*) FROM with_test1 
+  WHERE pay <ALL (SELECT /*+ INDEX (w idx_with no) */ pay
+                  FROM with_test1 w
+                  WHERE no BETWEEN 120000 AND 130000);       -- 5.172 seconds
+---- Using WITH clause
+   WITH t AS(SELECT /*+ INDEX (w idx_with_pay) */ MIN(pay) min_pay
+             FROM with_test1 w
+             WHERE pay >0
+             AND no BETWEEN 120000 AND 130000
+             AND rownum =  1)
+   SELECT COUNT(*)
+   FROM with_test1 w, t
+   WHERE w.pay < t.min_pay;                                    -- 0.234 seconds!!
+---- now dropping the index and do the full scan 
+DROP INDEX idx_with_pay;
+----- Using union operators. The table is accessed three times.
+SELECT 'max pay' c1, MAX(pay) max_pay FROM with_test1
+UNION ALL
+SELECT 'min pay' c1, MIN(pay) min_pay FROM with_test1
+UNION ALL
+SELECT 'max pay - min pay' c1, (MAX(pay) - MIN(pay)) diff_pay FROM with_test1;  -- 1.766 seconds. 
+----- Using WITH clause and unions. But the table is accessed only once.
+WITH sub_pay AS
+(
+   SELECT MAX(pay) max_pay, MIN(pay) min_pay 
+   FROM with_test1
+)
+SELECT 'max_pay' c1, max_pay FROM sub_pay
+UNION ALL
+SELECT 'min_pay' c1, min_pay FROM sub_pay
+UNION ALL
+SELECT 'max_pay - min_pay' c1, (max_pay - min_pay) diff_pay FROM sub_pay;         -- 0.656 seconds.
+
+---- (2) Comparing Sub Queries with EXIST and IN Operators  
+--          - IN operator does a DISTINCT operation.
+
+CREATE TABLE cust_t( cust_no VARCHAR2(1000), cust_nm VARCHAR2(1000));
+
+-- Inserting 1000 rows into cust_t table
+INSERT INTO cust_t 
+    SELECT LEVEL, 'NM' || TO_CHAR(level, '000')  
+        -- LEVEL is a virtual row. It's useful in hierarchical query because it returns integer value of where the current 
+        -- "level" is in a hierarchical tree. Can do LEVEL*(-1), LEVEL+10 etc to start with.
+    FROM dual CONNECT BY LEVEL <= 1000;    
+            -- "CONNECT BY LEVEL <=1000" is pretty much the same as "for (i=1;i<=1000;i++)"
+            -- CONNECT BY clause tells how each row is related. This case by what's defined by the LEVEL which is 1. 
+COMMIT;
+
+CREATE TABLE order_t 
+(
+    order_no VARCHAR2(4000),
+    cust_no VARCHAR2(1000),
+    orderdd VARCHAR2(8),
+    product_nm VARCHAR2(4000)
+);
+--- Inserting 1,000,000 rows into order_t table
+INSERT /*+ append*/INTO order_t 
+    SELECT LEVEL order_no, MOD(LEVEL, 500) cust_no, 
+    TO_CHAR(sysdate - MOD(LEVEL, 30), 'yyyymmdd') orderdd,
+    'TEST PRODUCT LONG NAME ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+    FROM dual CONNECT BY LEVEL <= 1000000;
+COMMIT;
+
+-- Creating table statistics, the book says:
+EXEC dbms_stats.gather_table_stats( ownname => 'JAVA00', tabname => 'CUST_T', CASCADE => TRUE, no_invalidate => FALSE);
+EXEC dbms_stats.gather_table_stats( ownname => 'JAVA00', tabname => 'ORDER_T', CASCADE => TRUE, no_invalidate => FALSE);
+   -- check
+SELECT table_name, num_rows, blocks, avg_row_len, sample_size
+    FROM user_tables
+    WHERE table_name IN ('ORDER_T', 'CUST_T');
+
+select * from USER_TABLESPACES;
+select * from user_free_space;
+select * from user_users;
+ALTER TABLESPACE 'ORDER_T' ADD DATAFILE;
+CREATE INDEX ix_order_t_01 ON order_t(cust_no);    -- ORA-01652: unable to extend temp segment by 128 in tablespace SYSTEM
+select * from user_ind_columns;
+
+SELECT COUNT(*) 
+    FROM cust_t a 
+    WHERE EXISTS (SELECT 1 
+                  FROM order_t b 
+                  WHERE a.cust_no = b.cust_no);  -- 0.109 sec
+
+-- Check the execution plan
+explain plan for 
+SELECT COUNT(*) 
+    FROM cust_t a 
+    WHERE EXISTS (SELECT 1 
+                  FROM order_t b 
+                  WHERE a.cust_no = b.cust_no); 
+SELECT * FROM TABLE(dbms_xplan.display);
+
+CREATE INDEX ix_cust_t_01 ON cust_t(cust_no);  -- Successful.
+SELECT /*+ LEADING(order_t) USE_NL(order_t dust_t) */ COUNT(*) 
+    FROM cust_t 
+    WHERE cust_no IN (SELECT cust_no FROM order_t);   -- 0.282 sec
+    
+EXPLAIN PLAN FOR 
+    SELECT /*+ LEADING(order_t) USE_NL(order_t dust_t) */ COUNT(*) 
+    FROM cust_t 
+    WHERE cust_no IN (SELECT cust_no FROM order_t);
+SELECT * FROM TABLE(dbms_xplan.display);
+
+---- 3) NULL in Scalar Sub Queries
+
+-- Create an employer info where depno is null
+INSERT INTO emp2 (empno, name, birthday, deptno, emp_type, tel) VALUES(202000219, 'RAY', TO_DATE('1988/03/22','yyyy/mm/dd'), 
+                '999', 'Intern', '02)111-1111');
+COMMIT;
+
+-- NVL() on scalar sub query  
+SELECT name, (SELECT NVL(dname, '## does not belong to any dept')
+                FROM dept2 d
+                WHERE e.deptno = d.dcode) DNAME
+FROM emp2 e;  -- NULL exists. (NVL() didn't work)
+
+-- Correct way (note where the NVL() is)
+SELECT name, NVL( (SELECT dname 
+                   FROM dept2 d
+                   WHERE e.deptno = d.dcode) , '## does not belong to any dept') DNAME
+FROM emp2 e;    -- NVL() works.
+
+
+--- 4) Making Scalar Sub Queries Faster
+        -- Use INDEX. A scalar sub query is called by the number of results of the main query. So if the main query gives 100 
+        -- results, the scalar sub query will be called 100 times and do the 100 full scan! Therefore, making an index is
+        -- essential for speed and efficiency.
+
+EXPLAIN PLAN FOR
+SELECT cust_no, NVL( (SELECT MAX(orderdd) 
+                       FROM order_t c
+                       WHERE c.cust_no = a.cust_no), '99991231') LAST_ORDER_DD
+FROM cust_t a;
+-- See the plan
+SELECT * FROM TABLE(dbms_xplan.display);  -- Can see it does full scan twice (order_t then cust_t)
+
+SELECT cust_no, NVL( (SELECT MAX(orderdd) -- Took 42.627 seconds without index
+                       FROM order_t c
+                       WHERE c.cust_no = a.cust_no), '99991231') LAST_ORDER_DD
+FROM cust_t a;
+
+CREATE INDEX ix_order_t_01 ON order_t(cust_no);   -- Can't create index. Was unable to solve this issue
+                                                -- ORA-01652: unable to extend temp segment by 128 in tablespace SYSTEM
+------- Troubleshooting attempt..------------
+select inst_id, tablespace_name, total_blocks, used_blocks, free_blocks
+from gv$sort_segment;    -- Run as a sys
+
+select sum(free_blocks)
+from gv$sort_segment
+where tablespace_name = 'TEMP';  -- sum(free_blocks): 14336. Got enough space....
+            -- "The second cause of ORA-01652 may have to do with the local temp segment not being able to extent
+            -- space even though there is space in other instances."
+ ALTER TABLESPACE 'TEMP' ADD DATAFILE;  -- error. "invalid tablespace name" :(
+ ----------------------------------------------
+ 
+-----
+----- CAHPTER 11: SEQUENCE
+-----
+-- A simple example to show the syntax
+CREATE SEQUENCE jno_seq
+    INCREMENT BY 1 
+    START WITH 100
+    MAXVALUE 110
+    MINVALUE 90
+    CYCLE       -- after the seq reaches maxvalue, begin with minvalue again. 
+                -- If NO CYCLE option is given, it'll result in an error.
+    CACHE 2;    -- CACHE option is important
+
+CREATE TABLE s_order (ord_no NUMBER(4), ord_name VARCHAR2(10), p_name VARCHAR2(20), p_qty NUMBER);
+INSERT INTO s_order VALUES (jno_seq.NEXTVAL, 'James', 'apple', 5);
+
+-- Sample test to show the sequence with options
+BEGIN
+    FOR i in 1..15 LOOP
+        INSERT INTO s_order VALUES(jno_seq.NEXTVAL, 'Allen', 'banana', 4);
+    END LOOP;
+    COMMIT;
+    END;
+/
+
+SELECT * FROM s_order;
+
+-- Reinitializing a sequence: kinda involved process. First, create a procedure
+CREATE OR REPLACE PROCEDURE a_seq( sname IN VARCHAR2) 
+    IS
+        val NUMBER;
+    BEGIN
+        EXECUTE IMMEDIATE 'SELECT '|| sname || '.NEXTVAL FROM DUAL ' INTO val;
+        EXECUTE IMMEDIATE 'ALTER SEQUENCE ' || sname || ' INCREMENT BY -' || val || ' MINVALUE 0';
+        EXECUTE IMMEDIATE 'SELECT ' || sname || '.NEXTVAL FROM DUAL ' INTO val;
+        EXECUTE IMMEDIATE 'ALTER SEQUENCE ' || sname || ' INCREMENT BY 1 MINVALUE 0';
+    END;
+/
+CREATE SEQUENCE a_seq_test;  -- create a test sequence
+SELECT a_seq_test.NEXTVAL FROM DUAL;
+
+EXECUTE a_seq('A_SEQ_TEST');  -- sequence name needs to be capped
+                        -- PL/SQL error here.... "a PL/SQL complication error"
+                        -- Will come back to solve this after covering PL/SQL
+-- SELECT a_seq_test.CURRVAL FROM DUAL;
+
+-- Viewing a sequence and alter value
+SELECT * FROM user_sequences;
+SELECT * FROM user_sequences Where sequence_name = 'A_SEQ_TEST';
+ALTER SEQUENCE a_seq_test MAXVALUE 100 CACHE 10;
+
+-- Removing a sequence
+DROP SEQUENCE <sequence_name>;
+
+--- Using SYNONYM for schema
+    -- Need to have "create synonym" and "create public sysnonym" grant
+CREATE SYNONYM e FOR emp;
+CREATE PUBLIC SYNONYM d2 FOR dept;
+
+SELECT * FROM user_synonyms;  -- can't see a public synonym but only of the user. Need to be a DBA.
+SELECT * FROM dba_synonyms WHERE table_name = 'DEPT'; -- as a SYS
+
+DROP SYNONYM e;
+
+
+-----
+----- CAHPTER 12: HIERARCHICAL QUERIES
+-----
+DELETE FROM emp WHERE ename = 'Cat';
+DELETE FROM emp WHERE ename = 'Tiger';
+
+-- Compare the query results those two
+SELECT ename FROM emp;
+SELECT LPAD(ename, LEVEL * 4, ' ') ENAME 
+        -- meaning: print ename with a length of level*4 bytes (level is the hierarchical level) and pad left with blank
+    FROM emp 
+    CONNECT BY PRIOR empno = mgr   -- 2. Determines how to connect the data
+    START WITH empno = 7839;       -- 1. Determines the root of a hierarchy
+
+-- An example with two hierachical conditions (empno, mgr)
+SELECT empno, ename, job, mgr, PRIOR ENAME AS mgr_name, LEVEL, LPAD(' ', (LEVEL - 1) * 2, ' ') || ename AS depth_ename,
+       SYS_CONNECT_BY_PATH(ename, '-') AS ename_list
+       FROM emp
+       START WITH mgr IS NULL        -- One's manager is null, which means this person is the ultimate boss. This is the root
+       CONNECT BY PRIOR empno = mgr  -- Meaning, empno of the managers are PRIOR (higher) level for data 
+       ORDER SIBLINGS BY empno;      -- Order siblings(meaning, the data of at the same level) by empno
+
+-- Showing a hierarchy of selected parts
+SELECT empno, job, mgr, LEVEL lv, LPAD(' ', (LEVEL-1)*2, ' ') || ename AS depth_name,
+        SYS_CONNECT_BY_PATH(ename, '-') AS enamelist
+    FROM emp
+    START WITH mgr IS NULL
+    CONNECT BY PRIOR empno = mgr
+               AND ENAME <> 'JONES'   -- Notice this. This query tells not to show the descending hierarchy starting with Jones
+    ORDER SIBLINGS BY ename;
+
+  -- And consider this too
+SELECT empno, job, mgr, LEVEL lv, LPAD(' ', (LEVEL-1)*2, ' ') || ename AS depth_name,
+        SYS_CONNECT_BY_PATH(ename, '-') AS enamelist
+    FROM emp
+    WHERE ENAME <> 'JONES'        -- Where clause is executed at the very last. This shows the descending hierarchy of Jones
+                                  -- but NOT Jones himself
+    START WITH mgr IS NULL
+    CONNECT BY PRIOR empno = mgr
+    ORDER SIBLINGS BY ename;
+
+-- Using CONNECTED_BY_ISLEAF and CONNECT_BY_ROOT functions
+    -- 1-1) Show inverse hierarchy starting from SMITH
+    SELECT LPAD(ename, LEVEL*5, '-') ENAME, SYS_CONNECT_BY_PATH(ename,'->') "ORDER(LOW -> HIGH)"
+    FROM emp
+    START WITH empno = 7369
+    CONNECT BY empno = PRIOR mgr;
+    
+    -- 1-2) CONNECT_BY_ISLEAF = 0
+    SELECT LPAD(ename, LEVEL*5, '-') ENAME, SYS_CONNECT_BY_PATH(ename,'->') "ORDER(LOW -> HIGH)"
+    FROM emp
+    WHERE CONNECT_BY_ISLEAF = 0    -- Don't show the last leaf (last point of the queried hierarchy) 
+    START WITH empno = 7369
+    CONNECT BY empno = PRIOR mgr;
+    
+    -- 1-3) CONNECT_BY_ISLEAF = 1
+    SELECT LPAD(ename, LEVEL*5, '-') ENAME, SYS_CONNECT_BY_PATH(ename,'->') "ORDER(LOW -> HIGH)"
+    FROM emp
+    WHERE CONNECT_BY_ISLEAF = 1    -- Show ONLY the leaf (last point of the the queried hierarchy) 
+    START WITH empno = 7369
+    CONNECT BY empno = PRIOR mgr;
+    
+    -- 2-1)CONNECT_BY_ROOT function: this function find the highest hierachy of the current point
+    SELECT empno, ename, CONNECT_BY_ROOT empno "Root EMPNO", SYS_CONNECT_BY_PATH(ename, '<-') "ROOT <- LEAF"
+    FROM emp
+    WHERE LEVEL > 1          -- Notice this. This means "show all levels (hierarchies) above 1 (starting level)"
+          AND empno = 7369    -- kind of the same with 'START WITH empno = 7369" (SMITH)
+    CONNECT BY PRIOR empno = mgr;
+      /* This querty gives rows under "ROOT <- LEAF" column 
+                                     <-FORD<-SMITH                -- SMITH's "root" is FORD
+                                     <-JONES<-FORD<-SMITH         -- FORD's "root" is JONES
+                                     <-KING<-JONES<-FORD<-SMITH   -- JONE's "root" is KING
+      */
+     -- 2-2)
+    SELECT empno, ename, CONNECT_BY_ROOT empno "Root EMPNO", SYS_CONNECT_BY_PATH(ename, '<-') "ROOT <- LEAF"
+    FROM emp
+    WHERE LEVEL = 2          -- "Show only 2 hierarchies"  (<-FORD<-SMITH)
+          AND empno = 7369   
+    CONNECT BY PRIOR empno = mgr;       
+    
+---- Chapter 12 Exercise (p.509~511)
+---- 1)
+
