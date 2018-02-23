@@ -1223,4 +1223,60 @@ BEGIN
 END;
 /
 
-SELECT * FROM emp;
+-- using %TYPE and assign values to new vars and print
+CREATE TABLE pl_employee 
+    AS SELECT employee_id, first_name, salary FROM employees;
+
+SET serveroutput ON;
+DECLARE
+    vno pl_employee.employee_id%TYPE;
+    vname pl_employee.first_name%TYPE;
+    vsal pl_employee.salary%TYPE;
+BEGIN
+    SELECT employee_id, first_name, salary INTO vno, vname, vsal
+    FROM pl_employee
+    WHERE employee_id = 180;
+    DBMS_OUTPUT.PUT_LINE( vno || '---' || vname || '---' || vsal);
+END;
+/
+
+-- using %ROWTYPE and assign values to new vars and print
+DECLARE
+    v_row pl_employee%ROWTYPE;
+BEGIN
+    SELECT * INTO v_row
+    FROM pl_employee
+    WHERE employee_id = 180;
+    
+    DBMS_OUTPUT.PUT_LINE( v_row.employee_id || '===' || v_row.first_name || '===' || v_row.salary);
+END;
+/
+
+-- Getting values from the user
+DECLARE
+    v_no1 NUMBER := &no1;
+    v_no2 NUMBER := &no2;
+    v_sum NUMBER;
+BEGIN
+    v_sum := v_no1 + v_no2;
+    DBMS_OUTPUT.PUT_LINE('첫번째 수: ' || v_no1 || ' 두번째 수: ' || v_no2 || ', 합은: ' || v_sum || ' 입니다');
+END;
+/
+
+-- PL/SQL RECORED type variables
+   -- Multiple types of variables can be treated within one record variable. 
+   -- To reference a field: type_name.filed_name
+DECLARE
+    TYPE emp_record_type IS RECORD
+    (emp_id employees.employee_id%TYPE,
+     f_name employees.first_name%TYPE,
+     e_sal employees.salary%TYPE) ;
+     v_rec1 emp_record_type;   -- Assigning emp_recored_type to v_rec1
+BEGIN
+    SELECT employee_id, first_name, salary INTO v_rec1
+    FROM employees 
+    WHERE employee_id = 180;
+DBMS_OUTPUT.PUT_LINE(v_rec1.emp_id || '  ' || v_rec1.f_name || '  ' || v_rec1.e_sal);
+END;
+/
+
