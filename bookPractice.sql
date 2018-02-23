@@ -1120,4 +1120,107 @@ SELECT empno, job, mgr, LEVEL lv, LPAD(' ', (LEVEL-1)*2, ' ') || ename AS depth_
     
 ---- Chapter 12 Exercise (p.509~511)
 ---- 1)
+SELECT LPAD(' ', LEVEL * 5, '-') || e.name || '-' || d.dname || ' ' ||  NVL(e.position, 'Team-Worker') "Name and Position"
+FROM emp2 e, dept2 d 
+WHERE e.deptno = d.dcode
+START WITH e.pempno IS NULL 
+CONNECT BY PRIOR e.empno = e.pempno 
+ORDER SIBLINGS BY e.name;
 
+---- 2)
+SELECT LPAD(' ', LEVEL * 5, '-') || e.name || '-' || d.dname || ' ' ||  NVL(e.position, 'Team-Worker') "Name and Position"
+FROM emp2 e, dept2 d 
+WHERE e.deptno = d.dcode
+START WITH e.name = 'Kevin Bacon'
+CONNECT BY PRIOR e.empno = e.pempno; -- 결과 책과 조금 다름
+
+---- 3)
+SELECT LPAD(' ', LEVEL * 5, '-') || e.name || '-' || d.dname || ' ' ||  NVL(e.position, 'Team-Worker') "Name and Position"
+FROM emp2 e, dept2 d 
+WHERE e.deptno = d.dcode
+START WITH e.name = 'Kevin Bacon'
+CONNECT BY e.empno = PRIOR e.pempno;   -- 결과 책과 조금 다름
+
+---- 4)
+SELECT name, PRIOR name "MGR_NAME" 
+FROM emp2 
+START WITH pempno IS NULL 
+CONNECT BY PRIOR empno = pempno;
+
+---- 5) Used scalar subquery to solve the problem
+SELECT e.empno, 
+    e.name || '-' || d.dname || ' ' ||  NVL(e.position, 'Team-Worker') "NAME AND POSITION",
+    (SELECT COUNT(e.empno)-1 
+        FROM emp2 e2 
+        START WITH e2.empno = e.empno 
+        CONNECT BY PRIOR e2.empno = e2.pempno) "SUM"
+FROM emp2 e, dept2 d 
+WHERE e.deptno = d.dcode
+START WITH pempno IS NULL 
+CONNECT BY PRIOR empno = pempno order by "SUM" DESC;
+
+---- 6)
+SELECT LPAD(' ', LEVEL * 5, '-') || e.name || '-' || d.dname || ' ' ||  NVL(e.position, 'Team-Worker') "NAME AND POSITION",
+        SYS_CONNECT_BY_PATH(e.name, '-') "PATH"
+FROM emp2 e, dept2 d 
+WHERE e.deptno = d.dcode
+START WITH e.name = 'Kevin Bacon'
+CONNECT BY PRIOR e.empno = e.pempno;    
+
+
+-----
+----- CAHPTER 15: PL/SQL
+-----
+CREATE TABLE pl_test( no NUMBER, name VARCHAR2(10), addr VARCHAR2(10));
+
+DECLARE 
+    v_no NUMBER := '&no';   -- Get values from the user and assign it into variables
+    v_name VARCHAR2(10) := '&name';
+    v_addr VARCHAR2(10) := '&addr';
+BEGIN
+    INSERT INTO pl_test VALUES(v_no, v_name, v_addr);  -- Put variables into a table
+END;
+/
+
+SELECT * FROM pl_test;
+
+-- Update
+BEGIN 
+    UPDATE pl_test
+    SET name = 'Bob'
+    WHERE no = 5;
+END;
+/
+
+-- Delete
+BEGIN
+    DELETE FROM pl_test
+    WHERE no = 11;
+END;
+/
+
+-- Merge
+CREATE TABLE pl_merge1(no NUMBER, name VARCHAR(10));
+CREATE TABLE pl_merge2 AS SELECT * FROM pl_merge1;
+
+INSERT INTO pl_merge1 VALUES(1, 'AAA');
+INSERT INTO pl_merge1 VALUES(2, 'BBB');
+INSERT INTO pl_merge2 VALUES(1, 'aaa');
+INSERT INTO pl_merge2 VALUES(5, 'bbb');
+
+SELECT * FROM pl_merge1;
+SELECT * FROM pl_merge2;
+
+BEGIN
+    MERGE INTO pl_merge2 m2
+    USING pl_merge1 m1
+    ON (m1.no = m2. no)
+    WHEN MATCHED THEN
+        UPDATE SET
+        m2.name = m1.name
+    WHEN NOT MATCHED THEN
+        INSERT VALUES(m1.no, m1.name);
+END;
+/
+
+SELECT * FROM emp;
